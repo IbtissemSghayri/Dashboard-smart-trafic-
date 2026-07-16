@@ -15,5 +15,5 @@ An IoT project using an ESP32 to monitor environmental conditions and control a 
 
 All sensor data is transmitted via MQTT to a Node-RED server, which powers a live web dashboard displaying gauges, historical charts, and real-time status — accessible locally through the local browser
 
-# Node-Red presentation :
+# Node-Red flow presentation :
 <img width="666" height="585" alt="Capture d&#39;écran 2026-07-16 102941" src="https://github.com/user-attachments/assets/759be1f3-9dc4-4bf3-ab65-16fba06aceeb" />
