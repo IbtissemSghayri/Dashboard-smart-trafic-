@@ -1,0 +1,124 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <DHT.h>
+const char* WIFI_SSID ="Orange-560";
+const char* WIFI_PASS= "wrxmcphy";
+
+const char* MQTT_SERVER ="test.mosquitto.org";
+const int   MQTT_PORT= 1883;
+const char* MQTT_CLIENT_ID = "esp32_capteurs";
+const char* TOPIC_DISTANCE = "esp32/ultrason";
+const char* TOPIC_SOL= "esp32/sol";
+const char* TOPIC_TEMP= "esp32/temperature";
+const char* TOPIC_HUM= "esp32/humidite";
+const char* TOPIC_FEU= "esp32/feu";
+#define TRIG_PIN 5
+#define ECHO_PIN 18
+#define SOIL_PIN 34
+#define DHT_PIN 4
+#define DHT_TYPE DHT11
+#define LED_VERT 33
+#define LED_JAUNE 32
+#define LED_ROUGE 25
+
+const float SEUIL_VERT_JAUNE  =50.0;
+const float SEUIL_JAUNE_ROUGE =20.0;
+
+DHT dht(DHT_PIN, DHT_TYPE);
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+unsigned long dernierEnvoi = 0;
+const unsigned long intervalle = 2000;
+void connecterWiFi() {
+  Serial.print("Connexion WiFi");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(" OK");
+  Serial.print("IP : ");
+  Serial.println(WiFi.localIP());
+}
+void connecterMQTT() {
+  while (!client.connected()) {
+    Serial.print("Connexion MQTT...");
+    if (client.connect(MQTT_CLIENT_ID)) {
+      Serial.println("OK!");
+    } else {
+      Serial.print("moshkol, code=");
+      Serial.print(client.state());
+      Serial.println(" -> nouvel essai shway ekher");
+      delay(3000);
+    }
+  }
+}
+float mesurerDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(5);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duree = pulseIn(ECHO_PIN, HIGH, 30000);
+  if (duree == 0) return -1;
+  return duree * 0.034 / 2.0;
+}
+String mettreAJourFeu(float distance) {
+  if (distance < 0 || distance > SEUIL_VERT_JAUNE) {
+    digitalWrite(LED_VERT, HIGH); digitalWrite(LED_JAUNE, LOW); digitalWrite(LED_ROUGE, LOW);
+    return "vert";
+  } else if (distance > SEUIL_JAUNE_ROUGE) {
+    digitalWrite(LED_VERT, LOW); digitalWrite(LED_JAUNE, HIGH); digitalWrite(LED_ROUGE, LOW);
+    return "jaune";
+  } else {
+    digitalWrite(LED_VERT, LOW); digitalWrite(LED_JAUNE, LOW); digitalWrite(LED_ROUGE, HIGH);
+    return "rouge";
+  }
+}
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_VERT, OUTPUT);
+  pinMode(LED_JAUNE, OUTPUT);
+  pinMode(LED_ROUGE, OUTPUT);
+  dht.begin();
+
+  connecterWiFi();
+  client.setServer(MQTT_SERVER, MQTT_PORT);
+}
+void loop() {
+  if (!client.connected()) {
+    connecterMQTT();
+  }
+  client.loop();
+
+  if (millis() - dernierEnvoi >= intervalle) {
+    dernierEnvoi=millis();
+
+    float distance= mesurerDistance();
+    String etatFeu =mettreAJourFeu(distance);
+
+    int soilBrut =analogRead(SOIL_PIN);
+    int soilPourcent =map(soilBrut, 4095, 0, 0,100);
+
+    float humidite= dht.readHumidity();
+    float temperature = dht.readTemperature();
+    if (distance >= 0) {
+      client.publish(TOPIC_DISTANCE,String(distance,1).c_str());
+    }
+    client.publish(TOPIC_SOL, String(soilPourcent).c_str());
+    client.publish(TOPIC_FEU, etatFeu.c_str());
+    if (!isnan(temperature)) {
+      client.publish(TOPIC_TEMP, String(temperature,1).c_str());
+    }
+    if (!isnan(humidite)) {
+      client.publish(TOPIC_HUM, String(humidite,1).c_str());
+    }
+    Serial.println("Donnees tbaathet mrigula");
+  }
+}
